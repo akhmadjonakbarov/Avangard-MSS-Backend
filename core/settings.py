@@ -16,5 +16,10 @@ class Settings(BaseSettings):
     ADMIN_EMAIL: str = "akhmadjonakbarov@gmail.com"
     DATABASE_URL: str = os.getenv('DATABASE_URL')
 
+    def init(self):
+        from apps.base.models import Base
+        from core.database_config import engine
+        Base.metadata.create_all(bind=engine)
+
 
 settings = Settings()
