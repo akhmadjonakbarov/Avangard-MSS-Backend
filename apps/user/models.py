@@ -4,7 +4,7 @@ from sqlalchemy.orm import relationship
 from apps.base.models import Base
 
 
-class UserModel(Base):
+class User(Base):
     __tablename__ = 'users'
 
     first_name = Column(String(length=30))
@@ -13,4 +13,4 @@ class UserModel(Base):
     email = Column(String(length=100), unique=True)
     password = Column(String, nullable=False)
 
-    credentials = relationship('CredentialModel', back_populates='user')
+    credentials = relationship('Credential', back_populates='user')

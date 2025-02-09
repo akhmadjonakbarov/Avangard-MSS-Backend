@@ -2,7 +2,7 @@ from apps.base.models import Base
 from sqlalchemy import Column, Integer, String
 
 
-class DeviceModel(Base):
+class Device(Base):
     __tablename__ = 'devices'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
