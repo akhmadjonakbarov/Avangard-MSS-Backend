@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-import uvicorn
+
 from core.settings import settings
 # routes
 from apps.routes import main_router
@@ -13,5 +13,6 @@ app.include_router(
 )
 
 if __name__ == '__main__':
+    import uvicorn
     settings.init()
     uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
