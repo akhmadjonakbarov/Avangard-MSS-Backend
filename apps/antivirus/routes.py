@@ -4,7 +4,6 @@ from starlette import status
 
 from apps.antivirus.models import Malware
 from di.db import db_dependency
-from di.user import user_dependency
 
 router = APIRouter(
     prefix='/antivirus-database',
@@ -13,7 +12,7 @@ router = APIRouter(
 
 
 @router.get('/init')
-async def init(db: db_dependency, user: user_dependency):
+async def init(db: db_dependency):
     try:
         scanned_apps = db.query(Malware).all()
         return {'apps': scanned_apps}

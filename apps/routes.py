@@ -8,7 +8,6 @@ from core.settings import settings
 main_router = APIRouter(
     prefix=settings.API_V1
 )
-
 main_router.include_router(
     user_routes.router, prefix=settings.API_V1
 )
