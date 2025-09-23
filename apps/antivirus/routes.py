@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import logging
 from typing import Optional
 
@@ -38,21 +39,44 @@ async def scan_file(
         device: device_dependency,
         file: UploadFile = File(...),
         application_id: str = Form(...),
-
 ):
     file_bytes = await file.read()
+
+
+    # check if task already exists for this file + app
+    query = select(ScanTask).where(
+        ScanTask.application_id == application_id,
+    )
+    existing_task = (await db.execute(query)).scalars().first()
+
+    if existing_task:
+        logger.info(f"File alrady exist for scanning: {application_id}")
+        raise HTTPException(
+            status_code=status.HTTP_200_OK,
+            detail={
+                "message": "File already scanned",
+                "task_id": existing_task.id,
+                "status": existing_task.status,
+            }
+        )
+
+    # create new scan task
     new_task = ScanTask(
         application_id=application_id,
         file_bytes=file_bytes,
+
         status=ScanStatus.pending,
-        device_code=device.get("device_code")
+        device_code=device.get("device_code"),
     )
     db.add(new_task)
     await db.commit()
     await db.refresh(new_task)
-
-    logger.info(f"File scan task queued: {application_id} on device {device.get('device_code')}")
-    return {"status": "queued", "task_id": new_task.id, "message": "File scan queued successfully."}
+    logger.info(f"New Task: {new_task.id} {new_task.status} {application_id}")
+    return {
+        "message": "New scan task created",
+        "task_id": new_task.id,
+        "status": new_task.status,
+    }
 
 
 async def process_scan_file(device_code: str, file_bytes: bytes, application_id: str, filename: str):
