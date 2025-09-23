@@ -1,7 +1,7 @@
-# vt_repository_file_only.py
 import asyncio
 from typing import Optional, Dict, Any
 import os
+import hashlib
 
 import aiohttp
 from tenacity import AsyncRetrying, stop_after_attempt, wait_exponential, retry_if_exception_type
@@ -65,13 +65,11 @@ class VirusTotalRepository:
                             if close_after:
                                 await session.close()
             else:
-                # For files >32MB, handle large file upload if needed
                 raise RuntimeError("File too large; please handle upload_url separately.")
 
-    async def get_report(self, resource: str) -> Dict[str, Any]:
+    async def get_file_report(self, file_hash: str) -> Dict[str, Any]:
         """
-        Fetch file scan report using its analysis id.
-        Retry automatically on 429 with backoff.
+        Get existing scan report for a file using its SHA-256 hash.
         """
         async with self._semaphore:
             async for attempt in AsyncRetrying(
@@ -84,10 +82,12 @@ class VirusTotalRepository:
                     session = await self._get_session()
                     close_after = session is not self._external_session
                     try:
-                        url = f"{API_BASE}/analyses/{resource}"
+                        url = f"{API_BASE}/files/{file_hash}"
                         async with session.get(url, headers=self._headers()) as resp:
+                            if resp.status == 404:
+                                # File not found in VT database, need to upload
+                                return None
                             if resp.status == 429:
-                                # Explicitly raise for Tenacity to retry
                                 raise aiohttp.ClientResponseError(
                                     resp.request_info, resp.history,
                                     status=429, message="Too Many Requests", headers=resp.headers
@@ -97,3 +97,36 @@ class VirusTotalRepository:
                     finally:
                         if close_after:
                             await session.close()
+
+    async def get_analysis_report(self, analysis_id: str) -> Dict[str, Any]:
+        """
+        Fetch file scan report using its analysis id.
+        """
+        async with self._semaphore:
+            async for attempt in AsyncRetrying(
+                    stop=stop_after_attempt(RETRIES),
+                    wait=wait_exponential(multiplier=2, min=5, max=60),
+                    retry=retry_if_exception_type(aiohttp.ClientResponseError),
+                    reraise=True,
+            ):
+                with attempt:
+                    session = await self._get_session()
+                    close_after = session is not self._external_session
+                    try:
+                        url = f"{API_BASE}/analyses/{analysis_id}"
+                        async with session.get(url, headers=self._headers()) as resp:
+                            if resp.status == 429:
+                                raise aiohttp.ClientResponseError(
+                                    resp.request_info, resp.history,
+                                    status=429, message="Too Many Requests", headers=resp.headers
+                                )
+                            resp.raise_for_status()
+                            return await resp.json()
+                    finally:
+                        if close_after:
+                            await session.close()
+
+    @staticmethod
+    def calculate_file_hash(file_bytes: bytes) -> str:
+        """Calculate SHA-256 hash of file bytes."""
+        return hashlib.sha256(file_bytes).hexdigest()
