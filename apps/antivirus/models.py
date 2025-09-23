@@ -58,11 +58,12 @@ class ScanStatus(str, enum.Enum):
     failed = "failed"
     timeout = "timeout"
 
+
 class ScanTask(Base):
     __tablename__ = "scan_tasks"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     application_id = Column(String, nullable=False)
     file_bytes = Column(LargeBinary, nullable=False)
-    status = Column(Enum(ScanStatus), default=ScanStatus.pending)
+    status = Column(Enum(ScanStatus, name="scanstatus"), default=ScanStatus.pending, nullable=False)
     device_code = Column(String, nullable=True)
