@@ -50,8 +50,7 @@ class Detection(Base):
     malware = relationship("Malware", back_populates="detections")
 
 
-
-class ScanStatus(str, enum.Enum):
+class ScanStatus(str):
     pending = "pending"
     processing = "processing"
     completed = "completed"
@@ -65,5 +64,4 @@ class ScanTask(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     application_id = Column(String, nullable=False)
     file_bytes = Column(LargeBinary, nullable=False)
-    status = Column(Enum(ScanStatus, name="scanstatus"), default=ScanStatus.pending, nullable=False)
-    device_code = Column(String, nullable=True)
+    status = Column(String, nullable=False, default=ScanStatus.pending)
