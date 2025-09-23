@@ -1,7 +1,7 @@
 from marshmallow.fields import Nested
 from marshmallow_sqlalchemy import SQLAlchemyAutoSchema
 from .models import User
-from apps.base.serializer_fields import SerializerExcludeFields
+from apps.base.serializers import SerializerExcludeFields
 
 
 class UserModelSerializer(SQLAlchemyAutoSchema):

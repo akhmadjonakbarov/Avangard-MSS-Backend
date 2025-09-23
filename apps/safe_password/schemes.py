@@ -2,4 +2,5 @@ from pydantic import BaseModel
 
 
 class CredentialRequestBody(BaseModel):
-    data: str
+    credential_data: str
+    id: int

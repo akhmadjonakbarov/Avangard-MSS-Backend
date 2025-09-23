@@ -1,10 +1,9 @@
-from pydantic_settings import BaseSettings
 from dotenv import load_dotenv
-
 import os
+from pydantic_settings import BaseSettings
+
 
 load_dotenv()
-
 
 class Settings(BaseSettings):
     APP_NAME: str = "Avangard Service"
@@ -14,12 +13,15 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "dd9a735175a83222d92c987aec57f4bde11f0e770b5d9ebd5803f734b290edba"
     ALGORITHM: str = "HS256"
     ADMIN_EMAIL: str = "akhmadjonakbarov@gmail.com"
-    DATABASE_URL: str = os.getenv('DATABASE_URL')
+    DATABASE_URL: str = os.getenv("DATABASE_URL")
 
-    def init(self):
+    async def init(self):
+        """Initialize database models (create tables)."""
         from apps.base.models import Base
         from core.database_config import engine
-        Base.metadata.create_all(bind=engine)
+
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
 
 
 settings = Settings()

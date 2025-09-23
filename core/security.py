@@ -25,6 +25,23 @@ def create_access_token(
     )
 
 
+def create_access_token_for_device(
+        device_code: str,
+        expires_delta: timedelta = timedelta(settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+) -> str:
+    encode = {
+        'device_code': device_code,
+
+    }
+    expires = datetime.utcnow() + expires_delta
+    encode.update({
+        'exp': expires.timestamp()
+    })
+    return jwt.encode(
+        encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM
+    )
+
+
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
