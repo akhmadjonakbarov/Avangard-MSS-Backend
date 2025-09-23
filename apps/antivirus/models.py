@@ -65,3 +65,6 @@ class ScanTask(Base):
     application_id = Column(String, nullable=False)
     file_bytes = Column(LargeBinary, nullable=False)
     status = Column(String, nullable=False, default=ScanStatus.pending)
+    device_code = Column(String, nullable=True)
+
+
