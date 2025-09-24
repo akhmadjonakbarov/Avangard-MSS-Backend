@@ -123,11 +123,12 @@
 
 
 import asyncio
-from typing import Optional, Dict, Any, List
-import os
 import hashlib
+import os
+from typing import Optional, Dict, Any, List
+
 import aiohttp
-from tenacity import AsyncRetrying, stop_after_attempt, wait_exponential, retry_if_exception_type
+
 from core.exceptions import ScanTaskException
 
 API_BASE = os.getenv("VT_API_BASE", "https://www.virustotal.com/api/v3")
