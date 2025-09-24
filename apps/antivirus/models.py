@@ -34,8 +34,6 @@ class App(Base):
     harmless_count = Column(Integer, default=0)
     undetected_count = Column(Integer, default=0)
     scan_date = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=func.now())
-
     malwares = relationship("Malware", secondary=app_malware, back_populates="apps", lazy="selectin")
 
 
@@ -47,8 +45,6 @@ class Malware(Base):
     category = Column(String, nullable=True)  # malicious, suspicious
     sha256 = Column(String, unique=True, nullable=True)
     md5 = Column(String, unique=True, nullable=True)
-    created_at = Column(DateTime, default=func.now())
-
     apps = relationship("App", secondary=app_malware, back_populates="malwares")
     detections = relationship("Detection", back_populates="malware", cascade="all, delete-orphan")
 
@@ -67,8 +63,6 @@ class Detection(Base):
     result = Column(String, nullable=True)  # e.g. Trojan.AndroidOS.SmsSpy.C!c
     file_hash = Column(String(64), nullable=True, index=True)  # SHA-256 hash of scanned file
     malware_id = Column(Integer, ForeignKey("malwares.id"))
-    created_at = Column(DateTime, default=func.now())
-
     malware = relationship("Malware", back_populates="detections")
 
 
@@ -81,8 +75,6 @@ class ScanTask(Base):
     scanning_hash = Column(String(64), nullable=True, index=True)  # SHA-256 hash
     status = Column(String, nullable=False, default=ScanStatus.PENDING)
     device_code = Column(String, nullable=True)
-    created_at = Column(DateTime, default=func.now())
-    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
     def calculate_hash(self) -> str:
         """Calculate SHA-256 hash of file_bytes."""

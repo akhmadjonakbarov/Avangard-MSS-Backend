@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database_config import async_session_factory
+from core.exceptions import ScanTaskException
 from di.db import db_dependency
 from di.device import device_dependency
 from .models import App, Malware, ScanTask, ScanStatus, Detection
@@ -108,60 +109,66 @@ async def scan_by_hash(
         file_hash: str = Form(..., description="SHA-256 hash of the file"),
         application_id: str = Form(...),
 ):
-    """Scan a file using only its hash (file already known to VirusTotal)."""
+    try:
+        """Scan a file using only its hash (file already known to VirusTotal)."""
 
-    # Check if app with this hash already exists
-    app_query = select(App).where(App.file_hash == file_hash)
-    existing_app = (await db.execute(app_query)).scalars().first()
+        # Check if app with this hash already exists
+        app_query = select(App).where(App.file_hash == file_hash)
+        existing_app = (await db.execute(app_query)).scalars().first()
 
-    if existing_app:
-        logger.info(f"File with hash already scanned: {file_hash}")
-        serializer = AppSerializer()
-        return {
-            "message": "File already scanned successfully",
-            "status": "completed",
-            "scanning_hash": file_hash,
-            "app": serializer.dump(existing_app)
-        }
-
-    # Check if task already exists for this hash
-    task_query = select(ScanTask).where(
-        ScanTask.scanning_hash == file_hash,
-        ScanTask.application_id == application_id
-    )
-    existing_task = (await db.execute(task_query)).scalars().first()
-
-    if existing_task:
-        logger.info(f"Scan task already exists for hash: {file_hash}")
-        raise HTTPException(
-            status_code=status.HTTP_200_OK,
-            detail={
-                "message": "Scan task already exists",
-                "task_id": existing_task.id,
-                "status": existing_task.status,
-                "scanning_hash": file_hash
+        if existing_app:
+            logger.info(f"File with hash already scanned: {file_hash}")
+            serializer = AppSerializer()
+            return {
+                "message": "File already scanned successfully",
+                "status": "completed",
+                "scanning_hash": file_hash,
+                "app": serializer.dump(existing_app)
             }
+
+        # Check if task already exists for this hash
+        task_query = select(ScanTask).where(
+            ScanTask.scanning_hash == file_hash,
+            ScanTask.application_id == application_id
         )
+        existing_task = (await db.execute(task_query)).scalars().first()
 
-    # Create hash-only scan task (no file bytes)
-    new_task = ScanTask(
-        application_id=application_id,
-        file_bytes=b"",  # Empty bytes for hash-only scan
-        scanning_hash=file_hash,
-        status=ScanStatus.PENDING,
-        device_code=device.get("device_code"),
-    )
-    db.add(new_task)
-    await db.commit()
-    await db.refresh(new_task)
+        if existing_task:
+            logger.info(f"Scan task already exists for hash: {file_hash}")
+            raise HTTPException(
+                status_code=status.HTTP_200_OK,
+                detail={
+                    "message": "Scan task already exists",
+                    "task_id": existing_task.id,
+                    "status": existing_task.status,
+                    "scanning_hash": file_hash
+                }
+            )
 
-    logger.info(f"New Hash-Only Task: {new_task.id} for {application_id} Hash: {file_hash}")
-    return {
-        "message": "Hash-based scan task created",
-        "task_id": new_task.id,
-        "status": new_task.status,
-        "scanning_hash": file_hash
-    }
+        # Create hash-only scan task (no file bytes)
+        new_task = ScanTask(
+            application_id=application_id,
+            file_bytes=b"",  # Empty bytes for hash-only scan
+            scanning_hash=file_hash,
+            status=ScanStatus.PENDING,
+            device_code=device.get("device_code"),
+        )
+        db.add(new_task)
+        await db.commit()
+        await db.refresh(new_task)
+
+        logger.info(f"New Hash-Only Task: {new_task.id} for {application_id} Hash: {file_hash}")
+        return {
+            "message": "Hash-based scan task created",
+            "task_id": new_task.id,
+            "status": new_task.status,
+            "scanning_hash": file_hash
+        }
+    except Exception as e:
+        print("ERROR: " + str(e))
+        return {
+            "detail": str(e)
+        }
 
 
 async def save_scan_result(report: dict, db: AsyncSession, application_id: str, file_hash: str):
@@ -452,12 +459,25 @@ async def scan_worker():
         async with async_session_factory() as db:
             result = await db.execute(
                 select(ScanTask).where(
-                    ScanTask.status.in_([ScanStatus.PENDING, ScanStatus.TIMEOUT, ScanStatus.PROCESSING]))
+                    ScanTask.status.in_(
+                        [ScanStatus.PENDING, ScanStatus.FAILED, ScanStatus.TIMEOUT, ScanStatus.PROCESSING]))
             )
             tasks = result.scalars().all()
 
             for task in tasks:
-                # Update status to processing
+                # DELETE failed tasks with no file bytes
+                if task.status == ScanStatus.FAILED and (task.file_bytes is None or len(task.file_bytes) == 0):
+                    logger.info(f"Deleting failed task {task.id} with no file bytes")
+                    await db.delete(task)
+                    await db.commit()
+                    continue  # Skip to next task
+
+                # RESCAN failed tasks that have file bytes
+                if task.status == ScanStatus.FAILED:
+                    logger.info(f"Retrying failed task {task.id} that has file bytes")
+                    task.status = ScanStatus.PENDING  # Reset to pending for retry
+                    await db.commit()
+
                 if task.status in [ScanStatus.PENDING, ScanStatus.TIMEOUT]:
                     task.status = ScanStatus.PROCESSING
                     await db.commit()
@@ -524,6 +544,10 @@ async def scan_worker():
                         task.status = ScanStatus.TIMEOUT
                         await db.commit()
                         logger.warning(f"Task {task.application_id} TIMEOUT after polling")
+
+                except ScanTaskException as e:
+                    await db.delete(task)
+                    await db.commit()
 
                 except Exception as e:
                     logger.exception(f"Unexpected error for {task.application_id}: {e}")

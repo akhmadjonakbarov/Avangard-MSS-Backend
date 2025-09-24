@@ -6,6 +6,8 @@ import hashlib
 import aiohttp
 from tenacity import AsyncRetrying, stop_after_attempt, wait_exponential, retry_if_exception_type
 
+from core.exceptions import ScanTaskException
+
 API_BASE = os.getenv("VT_API_BASE", "https://www.virustotal.com/api/v3")
 API_KEY = os.getenv("VT_API_KEY")  # set your API key in env
 DEFAULT_TIMEOUT = 30.0
@@ -65,7 +67,7 @@ class VirusTotalRepository:
                             if close_after:
                                 await session.close()
             else:
-                raise RuntimeError("File too large; please handle upload_url separately.")
+                raise ScanTaskException(message="File too large; please handle upload_url separately.", error_code=999)
 
     async def get_file_report(self, file_hash: str) -> Dict[str, Any]:
         """
