@@ -1,6 +1,9 @@
+# In routes.py - FIX the status access and move serializers:
+
 import asyncio
 import hashlib
 import logging
+import time  # Add this import
 
 import aiohttp
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, status
@@ -11,9 +14,9 @@ from core.database_config import async_session_factory
 from core.exceptions import ScanTaskException
 from di.db import db_dependency
 from di.device import device_dependency
-from .models import App, Malware, ScanTask, ScanStatus, Detection
+from .models import App, Malware, ScanTask, ScanStatus, Detection, app_malware
 from .repositories import VirusTotalRepository
-from .serializers import AppSerializer
+from .serializers import AppSerializer  # Import from serializers
 
 router = APIRouter(
     prefix='/antivirus-database',
@@ -28,9 +31,42 @@ formatter = logging.Formatter("[%(asctime)s] [%(levelname)s] %(message)s")
 handler.setFormatter(formatter)
 logger.addHandler(handler)
 
-# VirusTotal rate limiting
-vt_semaphore = asyncio.Semaphore(4)
-VT_WAIT_SECONDS = 15  # 4 requests/minute → 1 request every 15 seconds
+
+# VirusTotal rate limiting tracker
+class VTRateLimiter:
+    def __init__(self):
+        self.last_request_time = 0
+        self.requests_this_minute = 0
+        self.minute_start_time = time.time()
+
+    async def wait_if_needed(self):
+        current_time = time.time()
+
+        # Reset counter if we're in a new minute
+        if current_time - self.minute_start_time >= 60:
+            self.requests_this_minute = 0
+            self.minute_start_time = current_time
+
+        # If we've made 4 requests this minute, wait until next minute
+        if self.requests_this_minute >= 4:
+            wait_time = 60 - (current_time - self.minute_start_time)
+            if wait_time > 0:
+                logger.info(f"Rate limit reached. Waiting {wait_time:.1f} seconds")
+                await asyncio.sleep(wait_time)
+                self.requests_this_minute = 0
+                self.minute_start_time = time.time()
+
+        # Ensure at least 15 seconds between requests
+        time_since_last = current_time - self.last_request_time
+        if time_since_last < 15:
+            await asyncio.sleep(15 - time_since_last)
+
+        self.requests_this_minute += 1
+        self.last_request_time = time.time()
+
+
+# Global rate limiter
+vt_rate_limiter = VTRateLimiter()
 
 
 def calculate_file_hash(file_bytes: bytes) -> str:
@@ -62,7 +98,7 @@ async def scan_file(
             detail={
                 "message": "File already scanned",
                 "task_id": existing_task.id,
-                "status": existing_task.status.value,
+                "status": existing_task.status,  # REMOVE .value
                 "scanning_hash": file_hash
             }
         )
@@ -73,7 +109,6 @@ async def scan_file(
 
     if existing_app:
         logger.info(f"File with same hash already completed scanning: {file_hash}")
-        # Return existing scan results
         serializer = AppSerializer()
         return {
             "message": "File already scanned successfully",
@@ -87,7 +122,7 @@ async def scan_file(
         application_id=application_id,
         file_bytes=file_bytes,
         scanning_hash=file_hash,
-        status=ScanStatus.PENDING,
+        status=ScanStatus.PENDING.value,  # ADD .value here
         device_code=device.get("device_code"),
     )
     db.add(new_task)
@@ -150,7 +185,7 @@ async def scan_by_hash(
             application_id=application_id,
             file_bytes=b"",  # Empty bytes for hash-only scan
             scanning_hash=file_hash,
-            status=ScanStatus.PENDING,
+            status=ScanStatus.PENDING.value,
             device_code=device.get("device_code"),
         )
         db.add(new_task)
@@ -263,156 +298,6 @@ async def save_scan_result(report: dict, db: AsyncSession, application_id: str, 
         logger.info(f"Scan result saved - No threats found for app={application_id}, hash={file_hash}")
 
 
-# async def save_scan_result(report: dict, db: AsyncSession, application_id: str, file_hash: str):
-#     """
-#     Extract scan results and save to database.
-#     """
-#     attributes = report.get("data", {}).get("attributes", {})
-#     results = attributes.get("last_analysis_results", {}) or attributes.get("results", {})
-#     stats = attributes.get("last_analysis_stats", {})
-#
-#     # Find or create App - DON'T load malwares relationship
-#     query = await db.execute(select(App).where(App.application_id == application_id))
-#     app_obj = query.scalars().first()
-#
-#     if not app_obj:
-#         app_obj = App(application_id=application_id, file_hash=file_hash)
-#         db.add(app_obj)
-#         await db.commit()
-#         await db.refresh(app_obj)
-#         logger.info(f"App created: {application_id} with hash: {file_hash}")
-#     else:
-#         if not app_obj.file_hash:
-#             app_obj.file_hash = file_hash
-#
-#     # Update scan statistics
-#     app_obj.total_engines = stats.get("total", 0)
-#     app_obj.malicious_count = stats.get("malicious", 0)
-#     app_obj.suspicious_count = stats.get("suspicious", 0)
-#     app_obj.harmless_count = stats.get("harmless", 0)
-#     app_obj.undetected_count = stats.get("undetected", 0)
-#
-#     if attributes.get("last_analysis_date"):
-#         from datetime import datetime
-#         app_obj.scan_date = datetime.fromtimestamp(attributes["last_analysis_date"])
-#
-#     # Process scan results
-#     malicious_found = False
-#
-#     for engine_name, engine_result in results.items():
-#         category = engine_result.get("category")
-#         result_str = engine_result.get("result")
-#
-#         if category in ["malicious", "suspicious"] and result_str:
-#             malicious_found = True
-#
-#             # Find or create Malware
-#             malware_query = await db.execute(select(Malware).where(Malware.name == result_str))
-#             malware_obj = malware_query.scalars().first()
-#
-#             if not malware_obj:
-#                 malware_obj = Malware(name=result_str, category=category)
-#                 db.add(malware_obj)
-#                 await db.commit()
-#                 await db.refresh(malware_obj)
-#                 logger.info(f"Malware created: {result_str}")
-#
-#             # SIMPLE FIX: Just append without checking if it exists
-#             # SQLAlchemy will handle duplicate prevention in the many-to-many table
-#             app_obj.malwares.append(malware_obj)
-#
-#             # Create Detection record
-#             detection = Detection(
-#                 engine_name=engine_name,
-#                 engine_version=engine_result.get("engine_version"),
-#                 method=engine_result.get("method"),
-#                 category=category,
-#                 result=result_str,
-#                 file_hash=file_hash,
-#                 malware_id=malware_obj.id
-#             )
-#             db.add(detection)
-#             logger.info(f"Detection added: {engine_name} -> {result_str}")
-#
-#     await db.commit()
-#
-#     if malicious_found:
-#         logger.warning(f"MALICIOUS CONTENT FOUND for app={application_id}, hash={file_hash}")
-#     else:
-#         logger.info(f"Scan result saved - No threats found for app={application_id}, hash={file_hash}")
-
-
-# async def save_scan_result(report: dict, db: AsyncSession, application_id: str, file_hash: str):
-#     """
-#     Extract scan results and save to database.
-#     """
-#     attributes = report.get("data", {}).get("attributes", {})
-#     results = attributes.get("last_analysis_results", {}) or attributes.get("results", {})
-#     stats = attributes.get("last_analysis_stats", {})
-#
-#     # Find or create App
-#     query = await db.execute(select(App).where(App.application_id == application_id))
-#     app_obj = query.scalars().first()
-#
-#     if not app_obj:
-#         app_obj = App(application_id=application_id, file_hash=file_hash)
-#         db.add(app_obj)
-#         logger.info(f"App created: {application_id} with hash: {file_hash}")
-#     else:
-#         # Update hash if not set
-#         if not app_obj.file_hash:
-#             app_obj.file_hash = file_hash
-#
-#     # Update scan statistics
-#     app_obj.total_engines = stats.get("total", 0)
-#     app_obj.malicious_count = stats.get("malicious", 0)
-#     app_obj.suspicious_count = stats.get("suspicious", 0)
-#     app_obj.harmless_count = stats.get("harmless", 0)
-#     app_obj.undetected_count = stats.get("undetected", 0)
-#
-#     # Convert timestamp if available
-#     if attributes.get("last_analysis_date"):
-#         from datetime import datetime
-#         app_obj.scan_date = datetime.fromtimestamp(attributes["last_analysis_date"])
-#
-#     # Process scan results
-#     for engine_name, engine_result in results.items():
-#         category = engine_result.get("category")
-#         result_str = engine_result.get("result")
-#
-#         if category in ["malicious", "suspicious"] and result_str:
-#             # Find or create Malware
-#             malware_query = await db.execute(select(Malware).where(Malware.name == result_str))
-#             malware_obj = malware_query.scalars().first()
-#
-#             if not malware_obj:
-#                 malware_obj = Malware(name=result_str, category=category)
-#                 db.add(malware_obj)
-#                 await db.commit()
-#                 await db.refresh(malware_obj)
-#                 logger.info(f"Malware created: {result_str}")
-#
-#             # Link Malware to App if not linked
-#             if malware_obj not in app_obj.malwares:
-#                 app_obj.malwares.append(malware_obj)
-#
-#             # Create Detection record
-#             detection = Detection(
-#                 engine_name=engine_name,
-#                 engine_version=engine_result.get("engine_version"),
-#                 method=engine_result.get("method"),
-#                 category=category,
-#                 result=result_str,
-#                 file_hash=file_hash,
-#                 malware_id=malware_obj.id
-#             )
-#             db.add(detection)
-#             logger.info(f"Detection added: {engine_name} -> {result_str}")
-#
-#     await db.commit()
-#     logger.info(f"Scan result saved for app={application_id}, hash={file_hash}")
-
-
 async def send_notification(device_code: str, report: dict):
     """
     Send POST request to device with scan results.
@@ -454,23 +339,25 @@ async def init(db: db_dependency):
 
 
 async def scan_worker():
-    """Background worker for processing pending tasks."""
+    """Background worker for processing pending tasks with proper rate limiting."""
     repo = VirusTotalRepository()
 
     while True:
         async with async_session_factory() as db:
+            # Get only 2 tasks at a time to respect rate limits
             result = await db.execute(
-                select(ScanTask).where(ScanTask.status.in_([ScanStatus.PENDING, ScanStatus.TIMEOUT]))
+                select(ScanTask)
+                .where(ScanTask.status.in_([ScanStatus.PENDING.value, ScanStatus.TIMEOUT.value]))
+                .order_by(ScanTask.created_at.asc())
+                .limit(2)
             )
             tasks = result.scalars().all()
 
             for task in tasks:
-                # Skip if task is already being processed by another worker
-                if task.status == ScanStatus.PROCESSING:
+                if task.status == ScanStatus.PROCESSING.value:
                     continue
 
-                # Update status to processing
-                task.status = ScanStatus.PROCESSING
+                task.status = ScanStatus.PROCESSING.value
                 await db.commit()
                 await db.refresh(task)
 
@@ -480,67 +367,54 @@ async def scan_worker():
                         task.scanning_hash = calculate_file_hash(task.file_bytes)
                         await db.commit()
 
-                    # Step 1: Try to get existing report from VT using hash
+                    # Step 1: Check VT for existing report
                     if task.scanning_hash:
                         try:
-                            # Add delay between VT API calls to avoid rate limiting
-                            await asyncio.sleep(15)  # Wait 15 seconds between requests
-
+                            await vt_rate_limiter.wait_if_needed()
                             report = await repo.get_file_report(task.scanning_hash)
 
                             if report:
-                                # File exists in VT database - use existing report
-                                logger.info(f"Using existing VT report for task {task.application_id}")
+                                logger.info(f"Using existing VT report for {task.application_id}")
                                 await save_scan_result(report, db, task.application_id, task.scanning_hash)
                                 await send_notification(task.device_code, report)
-
-                                # Mark task as completed and remove it
                                 await db.delete(task)
                                 await db.commit()
-                                logger.info(f"Task {task.application_id} COMPLETED using existing VT report")
-                                continue  # Move to next task
+                                logger.info(f"Task {task.application_id} COMPLETED using existing report")
+                                continue
 
                         except aiohttp.ClientResponseError as e:
                             if e.status == 429:
-                                # Rate limited - wait longer and keep task in processing
-                                wait_time = 60  # Wait 1 minute
-                                logger.warning(
-                                    f"Rate limited on hash check for {task.application_id}, waiting {wait_time}s")
-                                task.status = ScanStatus.PENDING  # Reset to pending for retry
+                                logger.warning(f"Rate limited on hash check for {task.application_id}")
+                                task.status = ScanStatus.PENDING.value
                                 await db.commit()
-                                await asyncio.sleep(wait_time)
-                                continue
+                                await asyncio.sleep(60)
+                                break
                             else:
-                                raise  # Re-raise other HTTP errors
+                                raise
 
-                    # Step 2: If no existing report or no file bytes, upload file
+                    # Step 2: Upload file if needed
                     if not task.file_bytes or len(task.file_bytes) == 0:
-                        logger.warning(f"Task {task.id} has no file bytes, marking as failed")
-                        task.status = ScanStatus.FAILED
+                        logger.warning(f"Task {task.id} has no file bytes")
+                        task.status = ScanStatus.FAILED.value
                         await db.commit()
                         continue
 
-                    # Upload file to VT with rate limiting
                     try:
-                        # Add delay before upload
-                        await asyncio.sleep(15)
-
+                        await vt_rate_limiter.wait_if_needed()
                         vt_resp = await repo.scan_file(task.file_bytes, f"{task.application_id}.apk")
                         analysis_id = vt_resp.get("data", {}).get("id")
 
                         if not analysis_id:
-                            task.status = ScanStatus.FAILED
+                            task.status = ScanStatus.FAILED.value
                             await db.commit()
-                            logger.warning(f"Task {task.application_id} FAILED (no analysis id)")
                             continue
 
-                        # Step 3: Poll for scan completion with better rate limiting
+                        # Step 3: Poll for results
                         logger.info(f"Polling for scan results: {analysis_id}")
-                        for attempt in range(60):  # Reduced from 80 to 60 attempts
+                        for attempt in range(12):  # 12 attempts = 6 minutes max
                             try:
-                                # Add delay between poll requests
-                                await asyncio.sleep(10)  # Wait 10 seconds between polls
-
+                                await asyncio.sleep(30)  # Wait 30 seconds between polls
+                                await vt_rate_limiter.wait_if_needed()
                                 report = await repo.get_analysis_report(analysis_id)
                                 status_attr = report.get("data", {}).get("attributes", {}).get("status")
 
@@ -549,48 +423,40 @@ async def scan_worker():
                                     await send_notification(task.device_code, report)
                                     await db.delete(task)
                                     await db.commit()
-                                    logger.info(f"Task {task.application_id} COMPLETED after upload and scan")
+                                    logger.info(f"Task {task.application_id} COMPLETED after scan")
                                     break
 
-                                # Still processing
-                                if attempt % 5 == 0:  # Log every 5 attempts
-                                    logger.info(f"Scan still processing... attempt {attempt + 1}/60")
+                                logger.info(f"Scan processing... attempt {attempt + 1}/12")
 
                             except aiohttp.ClientResponseError as e:
                                 if e.status == 429:
-                                    wait_time = 60  # Wait 1 minute for rate limit
-                                    logger.warning(
-                                        f"Rate limited during polling, waiting {wait_time}s... attempt {attempt + 1}/60")
-                                    await asyncio.sleep(wait_time)
+                                    logger.warning(f"Rate limited during polling, waiting 60s")
+                                    await asyncio.sleep(60)
                                     continue
                                 else:
                                     raise
                         else:
-                            # If we get here, polling timed out
-                            task.status = ScanStatus.TIMEOUT
+                            task.status = ScanStatus.TIMEOUT.value
                             await db.commit()
-                            logger.warning(f"Task {task.application_id} TIMEOUT after polling")
+                            logger.warning(f"Task {task.application_id} TIMEOUT after 6 minutes")
 
                     except aiohttp.ClientResponseError as e:
                         if e.status == 429:
-                            # Rate limited on upload - wait and retry later
-                            wait_time = 60
-                            logger.warning(f"Rate limited on upload for {task.application_id}, waiting {wait_time}s")
-                            task.status = ScanStatus.PENDING
+                            logger.warning(f"Rate limited on upload for {task.application_id}")
+                            task.status = ScanStatus.PENDING.value
                             await db.commit()
-                            await asyncio.sleep(wait_time)
+                            await asyncio.sleep(60)
+                            break
                         else:
                             raise
 
                 except Exception as e:
                     logger.exception(f"Unexpected error for task {task.application_id}: {e}")
-                    task.status = ScanStatus.PENDING
+                    task.status = ScanStatus.PENDING.value
                     await db.commit()
-                    # Wait before retrying failed task
                     await asyncio.sleep(30)
 
-        # Wait before checking for new tasks again
-        await asyncio.sleep(30)  # Increased from 5 to 30 seconds
+        await asyncio.sleep(30)
 
 
 @router.on_event("startup")

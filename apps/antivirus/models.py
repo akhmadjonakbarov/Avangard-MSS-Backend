@@ -14,13 +14,6 @@ app_malware = Table(
 )
 
 
-class ScanStatus(str):
-    PENDING = "pending"
-    PROCESSING = "processing"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    TIMEOUT = "timeout"
-
 
 class App(Base):
     __tablename__ = 'apps'
@@ -65,6 +58,14 @@ class Detection(Base):
     malware_id = Column(Integer, ForeignKey("malwares.id"))
     malware = relationship("Malware", back_populates="detections")
 
+# In models.py - REPLACE the ScanStatus class with this:
+
+class ScanStatus(enum.Enum):
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    TIMEOUT = "timeout"
 
 class ScanTask(Base):
     __tablename__ = "scan_tasks"
