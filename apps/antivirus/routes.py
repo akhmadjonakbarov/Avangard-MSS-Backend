@@ -84,38 +84,38 @@ async def scan_file(
     file_bytes = await file.read()
     file_hash = calculate_file_hash(file_bytes)
 
-    # Check if task already exists for this file hash + app
-    query = select(ScanTask).where(
-        ScanTask.application_id == application_id,
-        ScanTask.scanning_hash == file_hash
-    )
-    existing_task = (await db.execute(query)).scalars().first()
-
-    if existing_task:
-        logger.info(f"File already exists for scanning: {application_id} with hash: {file_hash}")
-        raise HTTPException(
-            status_code=status.HTTP_200_OK,
-            detail={
-                "message": "File already scanned",
-                "task_id": existing_task.id,
-                "status": existing_task.status,  # REMOVE .value
-                "scanning_hash": file_hash
-            }
-        )
-
-    # Check if app with same hash already exists (completed scan)
-    app_query = select(App).where(App.file_hash == file_hash)
-    existing_app = (await db.execute(app_query)).scalars().first()
-
-    if existing_app:
-        logger.info(f"File with same hash already completed scanning: {file_hash}")
-        serializer = AppSerializer()
-        return {
-            "message": "File already scanned successfully",
-            "status": "completed",
-            "scanning_hash": file_hash,
-            "app": serializer.dump(existing_app)
-        }
+    # # Check if task already exists for this file hash + app
+    # query = select(ScanTask).where(
+    #     ScanTask.application_id == application_id,
+    #     ScanTask.scanning_hash == file_hash
+    # )
+    # existing_task = (await db.execute(query)).scalars().first()
+    #
+    # if existing_task:
+    #     logger.info(f"File already exists for scanning: {application_id} with hash: {file_hash}")
+    #     raise HTTPException(
+    #         status_code=status.HTTP_200_OK,
+    #         detail={
+    #             "message": "File already scanned",
+    #             "task_id": existing_task.id,
+    #             "status": existing_task.status,  # REMOVE .value
+    #             "scanning_hash": file_hash
+    #         }
+    #     )
+    #
+    # # Check if app with same hash already exists (completed scan)
+    # app_query = select(App).where(App.file_hash == file_hash)
+    # existing_app = (await db.execute(app_query)).scalars().first()
+    #
+    # if existing_app:
+    #     logger.info(f"File with same hash already completed scanning: {file_hash}")
+    #     serializer = AppSerializer()
+    #     return {
+    #         "message": "File already scanned successfully",
+    #         "status": "completed",
+    #         "scanning_hash": file_hash,
+    #         "app": serializer.dump(existing_app)
+    #     }
 
     # Create new scan task
     new_task = ScanTask(
