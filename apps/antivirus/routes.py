@@ -357,7 +357,7 @@ async def scan_worker():
                                 continue
                         except RuntimeError as e:
                             logger.warning(f"VT API keys exhausted: {e}. Will retry task later.")
-                            task.status = ScanStatus.PENDING  # Reset to pending to retry later
+                            task.status = ScanStatus.PENDING.value  # Reset to pending to retry later
                             await db.commit()
                             await asyncio.sleep(60)  # Wait 1 minute before next task
                             continue
