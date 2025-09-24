@@ -27,3 +27,12 @@ class AppSerializer(BaseSchema):
             {"id": m.id, "name": m.name, "category": m.category}
             for m in app.malwares
         ]
+
+
+class ScanTaskSerializer(BaseSchema):
+    id = fields.Int()
+    application_id = fields.String()
+    file_bytes = fields.String()
+    scanning_hash = fields.String()
+    status = fields.String()
+    device_code = fields.String()
