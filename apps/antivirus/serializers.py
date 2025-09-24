@@ -32,7 +32,6 @@ class AppSerializer(BaseSchema):
 class ScanTaskSerializer(BaseSchema):
     id = fields.Int()
     application_id = fields.String()
-    file_bytes = fields.String()
     scanning_hash = fields.String()
     status = fields.String()
     device_code = fields.String()
