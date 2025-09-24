@@ -75,8 +75,8 @@ class VirusTotalRepository:
         """
         async with self._semaphore:
             async for attempt in AsyncRetrying(
-                    stop=stop_after_attempt(RETRIES),
-                    wait=wait_exponential(multiplier=2, min=5, max=60),
+                    stop=stop_after_attempt(3),  # Reduced retries
+                    wait=wait_exponential(multiplier=2, min=30, max=120),  # Longer waits for 429
                     retry=retry_if_exception_type(aiohttp.ClientResponseError),
                     reraise=True,
             ):
@@ -90,6 +90,8 @@ class VirusTotalRepository:
                                 # File not found in VT database, need to upload
                                 return None
                             if resp.status == 429:
+                                # Wait longer for rate limits
+                                await asyncio.sleep(60)
                                 raise aiohttp.ClientResponseError(
                                     resp.request_info, resp.history,
                                     status=429, message="Too Many Requests", headers=resp.headers

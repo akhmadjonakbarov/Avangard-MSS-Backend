@@ -454,34 +454,25 @@ async def init(db: db_dependency):
 
 
 async def scan_worker():
+    """Background worker for processing pending tasks."""
     repo = VirusTotalRepository()
+
     while True:
         async with async_session_factory() as db:
             result = await db.execute(
-                select(ScanTask).where(
-                    ScanTask.status.in_(
-                        [ScanStatus.PENDING, ScanStatus.FAILED, ScanStatus.TIMEOUT, ScanStatus.PROCESSING]))
+                select(ScanTask).where(ScanTask.status.in_([ScanStatus.PENDING, ScanStatus.TIMEOUT]))
             )
             tasks = result.scalars().all()
 
             for task in tasks:
-                # DELETE failed tasks with no file bytes
-                if task.status == ScanStatus.FAILED and (task.file_bytes is None or len(task.file_bytes) == 0):
-                    logger.info(f"Deleting failed task {task.id} with no file bytes")
-                    await db.delete(task)
-                    await db.commit()
-                    continue  # Skip to next task
+                # Skip if task is already being processed by another worker
+                if task.status == ScanStatus.PROCESSING:
+                    continue
 
-                # RESCAN failed tasks that have file bytes
-                if task.status == ScanStatus.FAILED:
-                    logger.info(f"Retrying failed task {task.id} that has file bytes")
-                    task.status = ScanStatus.PENDING  # Reset to pending for retry
-                    await db.commit()
-
-                if task.status in [ScanStatus.PENDING, ScanStatus.TIMEOUT]:
-                    task.status = ScanStatus.PROCESSING
-                    await db.commit()
-                    await db.refresh(task)
+                # Update status to processing
+                task.status = ScanStatus.PROCESSING
+                await db.commit()
+                await db.refresh(task)
 
                 try:
                     # Calculate hash if not set
@@ -489,72 +480,117 @@ async def scan_worker():
                         task.scanning_hash = calculate_file_hash(task.file_bytes)
                         await db.commit()
 
-                    # First, try to get existing report from VT using hash
+                    # Step 1: Try to get existing report from VT using hash
                     if task.scanning_hash:
-                        report = await repo.get_file_report(task.scanning_hash)
+                        try:
+                            # Add delay between VT API calls to avoid rate limiting
+                            await asyncio.sleep(15)  # Wait 15 seconds between requests
 
-                        if report:
-                            # File already exists in VT database
-                            logger.info(
-                                f"Using existing VT report for task {task.application_id}, hash: {task.scanning_hash}")
-                            await save_scan_result(report, db, task.application_id, task.scanning_hash)
-                            await send_notification(task.device_code, report)
-                            await db.delete(task)
-                            await db.commit()
-                            continue
+                            report = await repo.get_file_report(task.scanning_hash)
 
-                    # If no existing report or no file bytes, upload file
+                            if report:
+                                # File exists in VT database - use existing report
+                                logger.info(f"Using existing VT report for task {task.application_id}")
+                                await save_scan_result(report, db, task.application_id, task.scanning_hash)
+                                await send_notification(task.device_code, report)
+
+                                # Mark task as completed and remove it
+                                await db.delete(task)
+                                await db.commit()
+                                logger.info(f"Task {task.application_id} COMPLETED using existing VT report")
+                                continue  # Move to next task
+
+                        except aiohttp.ClientResponseError as e:
+                            if e.status == 429:
+                                # Rate limited - wait longer and keep task in processing
+                                wait_time = 60  # Wait 1 minute
+                                logger.warning(
+                                    f"Rate limited on hash check for {task.application_id}, waiting {wait_time}s")
+                                task.status = ScanStatus.PENDING  # Reset to pending for retry
+                                await db.commit()
+                                await asyncio.sleep(wait_time)
+                                continue
+                            else:
+                                raise  # Re-raise other HTTP errors
+
+                    # Step 2: If no existing report or no file bytes, upload file
                     if not task.file_bytes or len(task.file_bytes) == 0:
                         logger.warning(f"Task {task.id} has no file bytes, marking as failed")
                         task.status = ScanStatus.FAILED
                         await db.commit()
                         continue
 
-                    # Upload file to VT
-                    vt_resp = await repo.scan_file(task.file_bytes, f"{task.application_id}.apk")
-                    analysis_id = vt_resp.get("data", {}).get("id")
+                    # Upload file to VT with rate limiting
+                    try:
+                        # Add delay before upload
+                        await asyncio.sleep(15)
 
-                    if not analysis_id:
-                        task.status = ScanStatus.FAILED
-                        await db.commit()
-                        logger.warning(f"Task {task.application_id} FAILED (no analysis id)")
-                        continue
+                        vt_resp = await repo.scan_file(task.file_bytes, f"{task.application_id}.apk")
+                        analysis_id = vt_resp.get("data", {}).get("id")
 
-                    # Poll for scan completion
-                    for _ in range(80):
-                        try:
-                            report = await repo.get_analysis_report(analysis_id)
-                            status_attr = report.get("data", {}).get("attributes", {}).get("status")
-                            if status_attr == "completed":
-                                await save_scan_result(report, db, task.application_id, task.scanning_hash)
-                                await send_notification(task.device_code, report)
-                                await db.delete(task)
-                                await db.commit()
-                                logger.info(f"Task {task.application_id} COMPLETED successfully")
-                                break
-                        except aiohttp.ClientResponseError as e:
-                            if e.status == 429:
-                                logger.warning(f"Rate limited on {task.application_id}, retrying in 30s")
-                                await asyncio.sleep(30)
-                                continue
-                            else:
-                                raise
-                        await asyncio.sleep(5)
-                    else:
-                        task.status = ScanStatus.TIMEOUT
-                        await db.commit()
-                        logger.warning(f"Task {task.application_id} TIMEOUT after polling")
+                        if not analysis_id:
+                            task.status = ScanStatus.FAILED
+                            await db.commit()
+                            logger.warning(f"Task {task.application_id} FAILED (no analysis id)")
+                            continue
 
-                except ScanTaskException as e:
-                    await db.delete(task)
-                    await db.commit()
+                        # Step 3: Poll for scan completion with better rate limiting
+                        logger.info(f"Polling for scan results: {analysis_id}")
+                        for attempt in range(60):  # Reduced from 80 to 60 attempts
+                            try:
+                                # Add delay between poll requests
+                                await asyncio.sleep(10)  # Wait 10 seconds between polls
+
+                                report = await repo.get_analysis_report(analysis_id)
+                                status_attr = report.get("data", {}).get("attributes", {}).get("status")
+
+                                if status_attr == "completed":
+                                    await save_scan_result(report, db, task.application_id, task.scanning_hash)
+                                    await send_notification(task.device_code, report)
+                                    await db.delete(task)
+                                    await db.commit()
+                                    logger.info(f"Task {task.application_id} COMPLETED after upload and scan")
+                                    break
+
+                                # Still processing
+                                if attempt % 5 == 0:  # Log every 5 attempts
+                                    logger.info(f"Scan still processing... attempt {attempt + 1}/60")
+
+                            except aiohttp.ClientResponseError as e:
+                                if e.status == 429:
+                                    wait_time = 60  # Wait 1 minute for rate limit
+                                    logger.warning(
+                                        f"Rate limited during polling, waiting {wait_time}s... attempt {attempt + 1}/60")
+                                    await asyncio.sleep(wait_time)
+                                    continue
+                                else:
+                                    raise
+                        else:
+                            # If we get here, polling timed out
+                            task.status = ScanStatus.TIMEOUT
+                            await db.commit()
+                            logger.warning(f"Task {task.application_id} TIMEOUT after polling")
+
+                    except aiohttp.ClientResponseError as e:
+                        if e.status == 429:
+                            # Rate limited on upload - wait and retry later
+                            wait_time = 60
+                            logger.warning(f"Rate limited on upload for {task.application_id}, waiting {wait_time}s")
+                            task.status = ScanStatus.PENDING
+                            await db.commit()
+                            await asyncio.sleep(wait_time)
+                        else:
+                            raise
 
                 except Exception as e:
-                    logger.exception(f"Unexpected error for {task.application_id}: {e}")
+                    logger.exception(f"Unexpected error for task {task.application_id}: {e}")
                     task.status = ScanStatus.PENDING
                     await db.commit()
+                    # Wait before retrying failed task
+                    await asyncio.sleep(30)
 
-        await asyncio.sleep(5)
+        # Wait before checking for new tasks again
+        await asyncio.sleep(30)  # Increased from 5 to 30 seconds
 
 
 @router.on_event("startup")
