@@ -5,6 +5,8 @@ import hashlib
 import logging
 import time  # Add this import
 
+from sqlalchemy import delete
+from datetime import datetime
 import aiohttp
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, status
 from sqlalchemy import select
@@ -84,39 +86,6 @@ async def scan_file(
     file_bytes = await file.read()
     file_hash = calculate_file_hash(file_bytes)
 
-    # # Check if task already exists for this file hash + app
-    # query = select(ScanTask).where(
-    #     ScanTask.application_id == application_id,
-    #     ScanTask.scanning_hash == file_hash
-    # )
-    # existing_task = (await db.execute(query)).scalars().first()
-    #
-    # if existing_task:
-    #     logger.info(f"File already exists for scanning: {application_id} with hash: {file_hash}")
-    #     raise HTTPException(
-    #         status_code=status.HTTP_200_OK,
-    #         detail={
-    #             "message": "File already scanned",
-    #             "task_id": existing_task.id,
-    #             "status": existing_task.status,  # REMOVE .value
-    #             "scanning_hash": file_hash
-    #         }
-    #     )
-    #
-    # # Check if app with same hash already exists (completed scan)
-    # app_query = select(App).where(App.file_hash == file_hash)
-    # existing_app = (await db.execute(app_query)).scalars().first()
-    #
-    # if existing_app:
-    #     logger.info(f"File with same hash already completed scanning: {file_hash}")
-    #     serializer = AppSerializer()
-    #     return {
-    #         "message": "File already scanned successfully",
-    #         "status": "completed",
-    #         "scanning_hash": file_hash,
-    #         "app": serializer.dump(existing_app)
-    #     }
-
     # Create new scan task
     new_task = ScanTask(
         application_id=application_id,
@@ -166,9 +135,14 @@ async def scan_by_hash(
             ScanTask.scanning_hash == file_hash,
             ScanTask.application_id == application_id
         )
-        existing_task = (await db.execute(task_query)).scalars().first()
+        existing_task: ScanTask = (await db.execute(task_query)).scalars().first()
 
         if existing_task:
+            if existing_task.status == ScanStatus.FAILED.value:
+                existing_task.status = ScanStatus.PENDING.value
+                await  db.commit()
+                logger.info(f"Scan task status updated: {ScanStatus.PENDING.value}")
+
             logger.info(f"Scan task already exists for hash: {file_hash}")
             raise HTTPException(
                 status_code=status.HTTP_200_OK,
@@ -209,24 +183,39 @@ async def scan_by_hash(
 async def save_scan_result(report: dict, db: AsyncSession, application_id: str, file_hash: str):
     """
     Extract scan results and save to database.
+    Overwrites previous results if the same application_id has a different file_hash.
     """
     attributes = report.get("data", {}).get("attributes", {})
     results = attributes.get("last_analysis_results", {}) or attributes.get("results", {})
     stats = attributes.get("last_analysis_stats", {})
 
-    # Find or create App
+    # Find existing app
     query = await db.execute(select(App).where(App.application_id == application_id))
     app_obj = query.scalars().first()
 
-    if not app_obj:
+    if app_obj:
+        # If file hash changed, remove old results
+        if app_obj.file_hash != file_hash:
+            logger.info(f"App {application_id} has new file hash. Removing old detections and malware links.")
+
+            # Delete old detections
+            await db.execute(delete(Detection).where(Detection.file_hash == app_obj.file_hash))
+
+            # Clear malware links in association table
+            from .models import app_malware
+            await db.execute(app_malware.delete().where(app_malware.c.app_id == app_obj.id))
+
+            # Update file hash
+            app_obj.file_hash = file_hash
+            await db.commit()
+            await db.refresh(app_obj)
+    else:
+        # Create new App
         app_obj = App(application_id=application_id, file_hash=file_hash)
         db.add(app_obj)
         await db.commit()
         await db.refresh(app_obj)
         logger.info(f"App created: {application_id} with hash: {file_hash}")
-    else:
-        if not app_obj.file_hash:
-            app_obj.file_hash = file_hash
 
     # Update scan statistics
     app_obj.total_engines = stats.get("total", 0)
@@ -234,14 +223,11 @@ async def save_scan_result(report: dict, db: AsyncSession, application_id: str, 
     app_obj.suspicious_count = stats.get("suspicious", 0)
     app_obj.harmless_count = stats.get("harmless", 0)
     app_obj.undetected_count = stats.get("undetected", 0)
-
     if attributes.get("last_analysis_date"):
-        from datetime import datetime
         app_obj.scan_date = datetime.fromtimestamp(attributes["last_analysis_date"])
 
     # Process scan results
     malicious_found = False
-
     for engine_name, engine_result in results.items():
         category = engine_result.get("category")
         result_str = engine_result.get("result")
@@ -252,7 +238,6 @@ async def save_scan_result(report: dict, db: AsyncSession, application_id: str, 
             # Find or create Malware
             malware_query = await db.execute(select(Malware).where(Malware.name == result_str))
             malware_obj = malware_query.scalars().first()
-
             if not malware_obj:
                 malware_obj = Malware(name=result_str, category=category)
                 db.add(malware_obj)
@@ -260,22 +245,10 @@ async def save_scan_result(report: dict, db: AsyncSession, application_id: str, 
                 await db.refresh(malware_obj)
                 logger.info(f"Malware created: {result_str}")
 
-            # Check if the relationship already exists by querying the association table
-            from .models import app_malware
-            link_query = await db.execute(
-                select(app_malware).where(
-                    app_malware.c.app_id == app_obj.id,
-                    app_malware.c.malware_id == malware_obj.id
-                )
-            )
-            existing_link = link_query.first()
-
-            if not existing_link:
-                # Only add if the relationship doesn't exist
+            # Link malware to app
+            if malware_obj not in app_obj.malwares:
                 app_obj.malwares.append(malware_obj)
                 logger.info(f"Linked malware {result_str} to app {application_id}")
-            else:
-                logger.info(f"Malware {result_str} already linked to app {application_id}")
 
             # Create Detection record
             detection = Detection(
@@ -347,7 +320,8 @@ async def scan_worker():
             # Get only 2 tasks at a time to respect rate limits
             result = await db.execute(
                 select(ScanTask)
-                .where(ScanTask.status.in_([ScanStatus.PENDING.value, ScanStatus.TIMEOUT.value]))
+                .where(
+                    ScanTask.status.in_([ScanStatus.PENDING.value, ScanStatus.TIMEOUT.value, ScanStatus.FAILED.value]))
                 .order_by(ScanTask.created_at.asc())
                 .limit(2)
             )
