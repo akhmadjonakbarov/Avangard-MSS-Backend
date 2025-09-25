@@ -81,7 +81,7 @@ async def register(
         admin_req: RegisterRequest
 ):
     key = "enable_admin"
-    is_admin = True if key == admin_req.admin_key else False
+    is_admin = True if key == admin_req.admin_key and admin_req.admin_key is not None else False
     try:
         async with db.begin():
             result = await db.execute(
