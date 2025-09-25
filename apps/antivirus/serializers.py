@@ -1,3 +1,5 @@
+from pydantic import BaseModel
+
 from apps.antivirus.models import App
 from apps.base.serializers import BaseSchema
 from marshmallow import fields
@@ -35,3 +37,7 @@ class ScanTaskSerializer(BaseSchema):
     scanning_hash = fields.String()
     status = fields.String()
     device_code = fields.String()
+
+
+class UpdateScanTaskStatusRequest(BaseModel):
+    status: str
