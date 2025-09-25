@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     ADMIN_EMAIL: str = "akhmadjonakbarov@gmail.com"
     DATABASE_URL: str = os.getenv("DATABASE_URL")
 
+
     async def init(self):
         """Initialize database models (create tables)."""
         from apps.base.models import Base

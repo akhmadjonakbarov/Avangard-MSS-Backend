@@ -1,8 +1,10 @@
 from pydantic import BaseModel, Field
 
 
-class CreateUserRequest(BaseModel):
-    first_name: str = Field(min_length=4)
-    last_name: str = Field(min_length=4)
+
+class RegisterRequest(BaseModel):
+    email: str = Field(min_length=6)
     password: str = Field(min_length=6)
-    email: str
+    first_name: str
+    last_name: str
+    admin_key: str

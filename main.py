@@ -1,14 +1,13 @@
 from fastapi import FastAPI
+from fastapi.security import OAuth2
 
 from apps.routes import main_router
 from core.settings import settings
+from fastapi.openapi.models import OAuthFlows as OAuthFlowsModel, OAuthFlowPassword
 
 app = FastAPI(
     title=settings.APP_NAME,
 )
-
-
-
 
 
 @app.on_event("startup")

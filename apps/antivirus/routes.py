@@ -1,4 +1,4 @@
-# In routes.py - FIX the status access and move serializers:
+# In device_routes.py - FIX the status access and move serializers:
 
 import asyncio
 import hashlib
@@ -11,19 +11,14 @@ import aiohttp
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-
 from core.database_config import async_session_factory
-from core.exceptions import ScanTaskException
 from di.db import db_dependency
 from di.device import device_dependency
 from .models import App, Malware, ScanTask, ScanStatus, Detection, app_malware
 from .repositories import VirusTotalRepository
 from .serializers import AppSerializer, ScanTaskSerializer  # Import from serializers
 
-router = APIRouter(
-    prefix='/antivirus-database',
-    tags=['AntiVirus']
-)
+router = APIRouter()
 
 # Configure logging
 logger = logging.getLogger("antivirus")
@@ -299,7 +294,10 @@ async def send_notification(device_code: str, report: dict):
 
 
 @router.get("/init")
-async def init(db: db_dependency):
+async def init(
+        db: db_dependency,
+        device: device_dependency
+):
     try:
         result = await db.execute(select(App))
         apps = result.scalars().all()
@@ -437,19 +435,6 @@ async def scan_worker():
                     await asyncio.sleep(30)
 
         await asyncio.sleep(30)
-
-
-@router.get('/tasks')
-async def tasks(db: db_dependency):
-    try:
-        result = await db.execute(select(ScanTask))
-        scan_tasks = result.scalars().all()
-        serializer = ScanTaskSerializer()
-        logger.info(f"/tasks returned {len(scan_tasks)} apps")
-        return {"tasks": serializer.dump(scan_tasks, many=True)}
-    except Exception as e:
-        logger.exception(f"/init error: {e}")
-        raise HTTPException(detail=str(e), status_code=status.HTTP_400_BAD_REQUEST)
 
 
 @router.on_event("startup")

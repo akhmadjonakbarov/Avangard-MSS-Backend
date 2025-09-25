@@ -9,12 +9,13 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 def create_access_token(
-        email: str, user_id: int,
+        email: str, user_id: int, is_admin: bool,
         expires_delta: timedelta = timedelta(settings.ACCESS_TOKEN_EXPIRE_MINUTES)
 ) -> str:
     encode = {
         'email': email,
-        'id': user_id
+        'id': user_id,
+        'is_admin': is_admin
     }
     expires = datetime.utcnow() + expires_delta
     encode.update({

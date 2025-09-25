@@ -1,33 +1,36 @@
-from typing import Annotated
-from fastapi import APIRouter, HTTPException, Depends
-from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel, Field
-from starlette import status
+from typing import Annotated
 from sqlalchemy import select
 
-from .scheme import CreateUserRequest
-from .serializers import UserModelSerializer
-from apps.user.models import User
+from apps import User
+from apps.user.scheme import RegisterRequest
+from apps.user.serializers import UserModelSerializer
+from core.security import verify_password, create_access_token, get_password_hash
 from di.db import db_dependency
-from core.security import verify_password, get_password_hash, create_access_token
 
-router = APIRouter(
+# Admin router
+admin_router = APIRouter(
     prefix="/auth",
     tags=["Authentication"]
 )
 
+# OAuth2 scheme for admin token
+# This points to your admin token endpoint
+admin_oauth2 = OAuth2PasswordBearer(tokenUrl="/auth/token")
 
 
+# Admin request models
 class LoginRequest(BaseModel):
     email: str = Field(min_length=6)
     password: str = Field(min_length=6)
 
 
-# Login with email/password
-@router.post("/login", status_code=status.HTTP_200_OK)
+@admin_router.post("/login", status_code=status.HTTP_200_OK)
 async def login(
         db: db_dependency,
-        login_req: LoginRequest
+        login_req: LoginRequest,
 ):
     result = await db.execute(
         select(User).where(User.email == login_req.email)
@@ -37,10 +40,11 @@ async def login(
     if not user or not verify_password(login_req.password, user.password):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Incorrect username or password"
+            detail="Incorrect credentials"
         )
 
-    access_token = create_access_token(email=user.email, user_id=user.id)
+    print(str(user))
+    access_token = create_access_token(email=user.email, user_id=user.id, is_admin=user.is_admin)
 
     serializer = UserModelSerializer(many=False)
     serialized_user = serializer.dump(user)
@@ -49,35 +53,60 @@ async def login(
     return {'user': serialized_user}
 
 
-# Register new user
-@router.post("/register", status_code=status.HTTP_201_CREATED)
+# Admin token endpoint for OAuth2
+@admin_router.post("/token")
+async def token(
+        form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
+        db: db_dependency
+):
+    result = await db.execute(
+        select(User).where(User.email == form_data.username)
+    )
+    admin: User | None = result.scalar_one_or_none()
+
+    if not admin or not verify_password(form_data.password, admin.password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Incorrect admin credentials"
+        )
+
+    return {
+        "access_token": create_access_token(admin.email, admin.id, is_admin=admin.is_admin),
+        "token_type": "bearer"
+    }
+
+
+# Admin registration
+@admin_router.post("/register", status_code=status.HTTP_201_CREATED)
 async def register(
         db: db_dependency,
-        created_user_body: CreateUserRequest
+        admin_req: RegisterRequest
 ):
+    key = "enable_admin"
     try:
         async with db.begin():
-            created_user = User(
-                email=created_user_body.email,
-                first_name=created_user_body.first_name,
-                last_name=created_user_body.last_name,
-                password=get_password_hash(created_user_body.password)
+            new_admin = User(
+                email=admin_req.email,
+                first_name=admin_req.first_name,
+                last_name=admin_req.last_name,
+                password=get_password_hash(admin_req.password),
+                is_admin=True if key == admin_req.admin_key else False  # mark as admin
             )
-            db.add(created_user)
+            db.add(new_admin)
 
-        # refresh to get `id`
-        await db.refresh(created_user)
+        await db.refresh(new_admin)
 
         access_token = create_access_token(
-            email=created_user.email,
-            user_id=created_user.id
+            email=new_admin.email,
+            user_id=new_admin.id,
+            is_admin=True
         )
 
         serializer = UserModelSerializer(many=False)
-        serialized_user = serializer.dump(created_user)
-        serialized_user['token'] = access_token
+        serialized_admin = serializer.dump(new_admin)
+        serialized_admin['token'] = access_token
 
-        return {'user': serialized_user}
+        return {'admin': serialized_admin}
 
     except Exception as e:
         await db.rollback()
@@ -85,26 +114,3 @@ async def register(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
         )
-
-
-# OAuth2 token endpoint
-@router.post("/token")
-async def login_for_access_token(
-        form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
-        db: db_dependency
-):
-    result = await db.execute(
-        select(User).where(User.email == form_data.username)
-    )
-    user: User | None = result.scalar_one_or_none()
-
-    if not user or not verify_password(form_data.password, user.password):
-        raise HTTPException(
-            status_code=400,
-            detail="Incorrect username or password"
-        )
-
-    return {
-        "access_token": create_access_token(user.email, user.id),
-        "token_type": "bearer"
-    }
