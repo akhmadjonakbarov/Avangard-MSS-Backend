@@ -83,14 +83,22 @@ async def register(
         admin_req: RegisterRequest
 ):
     key = "enable_admin"
+    is_admin = True if key == admin_req.admin_key and admin_req.admin_key is not None else False
     try:
         async with db.begin():
+            result = await db.execute(
+                select(User).where(User.email == admin_req.email)
+            )
+            user = result.scalar_one_or_none()  # returns User or None
+
+            if user:
+                raise HTTPException(detail='User already exist with this email', status_code=409)
             new_admin = User(
                 email=admin_req.email,
                 first_name=admin_req.first_name,
                 last_name=admin_req.last_name,
                 password=get_password_hash(admin_req.password),
-                is_admin=True if key == admin_req.admin_key else False  # mark as admin
+                is_admin=is_admin
             )
             db.add(new_admin)
 
@@ -108,6 +116,8 @@ async def register(
 
         return {'admin': serialized_admin}
 
+    except HTTPException:
+        raise
     except Exception as e:
         await db.rollback()
         raise HTTPException(
