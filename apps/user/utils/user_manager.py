@@ -1,12 +1,14 @@
 from typing import Annotated
 
 from fastapi import Depends, HTTPException
+from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
+
+from apps.user.routes import admin_oauth2
 from core.settings import settings
-from di.core_di import oauth2_bearer
 
 
-async def get_current_user(token: Annotated[str, Depends(oauth2_bearer)]):
+async def get_current_user(token: Annotated[str, Depends(admin_oauth2)]):
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         email: str = payload.get('email')
@@ -22,7 +24,7 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_bearer)]):
         raise HTTPException(status_code=403, detail="Invalid token")
 
 
-async def get_admin(token: Annotated[str, Depends(oauth2_bearer)]):
+async def get_admin(token: Annotated[str, Depends(admin_oauth2)]):
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         email: str = payload.get('email')

@@ -16,9 +16,8 @@ admin_router = APIRouter(
     tags=["Authentication"]
 )
 
-# OAuth2 scheme for admin token
-# This points to your admin token endpoint
-admin_oauth2 = OAuth2PasswordBearer(tokenUrl="/auth/token")
+
+admin_oauth2 = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token")
 
 
 # Admin request models
