@@ -7,7 +7,7 @@ from starlette import status
 from apps import Device
 from apps.devices.schemes import DeviceResponse
 from di.db import db_dependency
-from di.user import user_dependency, admin_dependency
+from di.user import admin_dependency
 
 router = APIRouter()
 

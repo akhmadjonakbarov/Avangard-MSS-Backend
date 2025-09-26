@@ -6,7 +6,7 @@ from starlette import status
 
 from apps.antivirus.models import ScanTask
 from apps.antivirus.serializers import ScanTaskSerializer, UpdateScanTaskStatusRequest
-from apps.devices.schemes import DeviceResponse
+
 from di.db import db_dependency
 from di.user import admin_dependency
 
