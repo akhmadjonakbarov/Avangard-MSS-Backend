@@ -5,7 +5,7 @@ import hashlib
 import logging
 import time  # Add this import
 
-from sqlalchemy import delete, func
+from sqlalchemy import delete
 from datetime import datetime
 import aiohttp
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, status
@@ -293,41 +293,19 @@ async def send_notification(device_code: str, report: dict):
         logger.error(f"Failed to send notification to device {device_code}: {e}")
 
 
-from fastapi import Query
-
-
-from fastapi import Query
-from sqlalchemy import func
-
 @router.get("/init")
 async def init(
-    db: db_dependency,
-    page: int = Query(1, ge=1, description="Page number"),
-    page_size: int = Query(10, ge=1, le=100, description="Items per page"),
+        db: db_dependency,
+        # device: device_dependency
 ):
     try:
-        # total count for pagination metadata
-        total_result = await db.execute(select(func.count()).select_from(App))
-        total = total_result.scalar_one()
-
-        # calculate offset
-        offset = (page - 1) * page_size
-
-        # fetch paginated results
-        result = await db.execute(
-            select(App).offset(offset).limit(page_size)
-        )
+        result = await db.execute(select(App))
         apps = result.scalars().all()
-
         serializer = AppSerializer()
-        logger.info(f"/init returned {len(apps)} apps (page={page}, page_size={page_size})")
+        logger.info(f"/init returned {len(apps)} apps")
 
         return {
-            "total": total,
-            "page": page,
-            "page_size": page_size,
-            "pages": (total + page_size - 1) // page_size,  # total pages
-            "apps": serializer.dump(apps, many=True),
+            "apps": serializer.dump(apps, many=True)
         }
     except Exception as e:
         logger.exception(f"/init error: {e}")
