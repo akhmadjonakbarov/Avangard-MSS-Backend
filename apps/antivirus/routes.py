@@ -336,6 +336,7 @@ async def scan_worker():
                 existed_task = result_one.scalar_one_or_none()
                 if existed_task:
                     await db.delete(existed_task)
+                    await db.commit()
                     continue
 
                 if task.status == ScanStatus.PROCESSING.value:
