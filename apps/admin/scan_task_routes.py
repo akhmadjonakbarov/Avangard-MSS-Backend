@@ -15,30 +15,37 @@ router = APIRouter()
 
 from fastapi import Query
 from sqlalchemy import func
+from fastapi import Query
+from sqlalchemy import func
 
 @router.get('')
 async def get_scan_tasks(
     db: db_dependency,
     user: admin_dependency,
-    limit: int = Query(10, ge=1, le=100, description="Items per page"),
-    offset: int = Query(0, ge=0, description="Starting index"),
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(10, ge=1, le=100, description="Items per page"),
 ):
     try:
         # total count for pagination metadata
         total_result = await db.execute(select(func.count()).select_from(ScanTask))
         total = total_result.scalar_one()
 
+        # calculate offset from page and page_size
+        offset = (page - 1) * page_size
+
         # fetch paginated results
         result = await db.execute(
-            select(ScanTask).offset(offset).limit(limit)
+            select(ScanTask).offset(offset).limit(page_size)
         )
         tasks = result.scalars().all()
 
         serializer = ScanTaskSerializer(many=True)
+
         return {
             "total": total,
-            "limit": limit,
-            "offset": offset,
+            "page": page,
+            "page_size": page_size,
+            "pages": (total + page_size - 1) // page_size,  # total pages
             "tasks": serializer.dump(tasks),
         }
     except Exception as e:

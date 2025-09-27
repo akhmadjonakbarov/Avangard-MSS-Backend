@@ -296,30 +296,37 @@ async def send_notification(device_code: str, report: dict):
 from fastapi import Query
 
 
+from fastapi import Query
+from sqlalchemy import func
+
 @router.get("/init")
 async def init(
-        db: db_dependency,
-        limit: int = Query(10, ge=1, le=100, description="Items per page"),
-        offset: int = Query(0, ge=0, description="Starting index"),
+    db: db_dependency,
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(10, ge=1, le=100, description="Items per page"),
 ):
     try:
         # total count for pagination metadata
         total_result = await db.execute(select(func.count()).select_from(App))
         total = total_result.scalar_one()
 
+        # calculate offset
+        offset = (page - 1) * page_size
+
         # fetch paginated results
         result = await db.execute(
-            select(App).offset(offset).limit(limit)
+            select(App).offset(offset).limit(page_size)
         )
         apps = result.scalars().all()
 
         serializer = AppSerializer()
-        logger.info(f"/init returned {len(apps)} apps (offset={offset}, limit={limit})")
+        logger.info(f"/init returned {len(apps)} apps (page={page}, page_size={page_size})")
 
         return {
             "total": total,
-            "limit": limit,
-            "offset": offset,
+            "page": page,
+            "page_size": page_size,
+            "pages": (total + page_size - 1) // page_size,  # total pages
             "apps": serializer.dump(apps, many=True),
         }
     except Exception as e:
