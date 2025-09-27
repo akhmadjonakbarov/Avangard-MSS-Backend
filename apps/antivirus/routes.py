@@ -356,6 +356,7 @@ async def scan_worker():
                     # Step 1: Check VT for existing report
                     if task.scanning_hash:
                         try:
+                            logger.info(f"Task {task.application_id} is trying to use existing report")
                             await vt_rate_limiter.wait_if_needed()
                             report = await repo.get_file_report(task.scanning_hash)
 
