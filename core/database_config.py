@@ -6,7 +6,7 @@ from core.settings import settings
 # Use async engine
 engine = create_async_engine(
     settings.DATABASE_URL,  # e.g. "postgresql+asyncpg://user:pass@localhost:5432/db"
-    echo=True,
+    echo=False,
     future=True,
 )
 
