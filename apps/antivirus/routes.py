@@ -5,7 +5,7 @@ import hashlib
 import logging
 import time  # Add this import
 
-from sqlalchemy import delete
+from sqlalchemy import delete, func
 from datetime import datetime
 import aiohttp
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, status
@@ -293,17 +293,35 @@ async def send_notification(device_code: str, report: dict):
         logger.error(f"Failed to send notification to device {device_code}: {e}")
 
 
+from fastapi import Query
+
+
 @router.get("/init")
 async def init(
         db: db_dependency,
-        device: device_dependency
+        limit: int = Query(10, ge=1, le=100, description="Items per page"),
+        offset: int = Query(0, ge=0, description="Starting index"),
 ):
     try:
-        result = await db.execute(select(App))
+        # total count for pagination metadata
+        total_result = await db.execute(select(func.count()).select_from(App))
+        total = total_result.scalar_one()
+
+        # fetch paginated results
+        result = await db.execute(
+            select(App).offset(offset).limit(limit)
+        )
         apps = result.scalars().all()
+
         serializer = AppSerializer()
-        logger.info(f"/init returned {len(apps)} apps")
-        return {"apps": serializer.dump(apps, many=True)}
+        logger.info(f"/init returned {len(apps)} apps (offset={offset}, limit={limit})")
+
+        return {
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "apps": serializer.dump(apps, many=True),
+        }
     except Exception as e:
         logger.exception(f"/init error: {e}")
         raise HTTPException(detail=str(e), status_code=status.HTTP_400_BAD_REQUEST)
@@ -326,6 +344,15 @@ async def scan_worker():
             tasks = result.scalars().all()
 
             for task in tasks:
+                application_id = task.application_id
+                result_one = await db.execute(
+                    select(App).where(App.application_id == application_id)
+                )
+                existed_task = result_one.scalar_one_or_none()
+                if existed_task:
+                    await db.delete(existed_task)
+                    continue
+
                 if task.status == ScanStatus.PROCESSING.value:
                     continue
 

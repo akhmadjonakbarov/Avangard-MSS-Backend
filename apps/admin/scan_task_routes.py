@@ -13,23 +13,40 @@ from di.user import admin_dependency
 router = APIRouter()
 
 
+from fastapi import Query
+from sqlalchemy import func
+
 @router.get('')
 async def get_scan_tasks(
-        db: db_dependency,
-        user: admin_dependency
+    db: db_dependency,
+    user: admin_dependency,
+    limit: int = Query(10, ge=1, le=100, description="Items per page"),
+    offset: int = Query(0, ge=0, description="Starting index"),
 ):
     try:
-        result = await db.execute(select(ScanTask))
-        devices = result.scalars().all()
+        # total count for pagination metadata
+        total_result = await db.execute(select(func.count()).select_from(ScanTask))
+        total = total_result.scalar_one()
+
+        # fetch paginated results
+        result = await db.execute(
+            select(ScanTask).offset(offset).limit(limit)
+        )
+        tasks = result.scalars().all()
+
         serializer = ScanTaskSerializer(many=True)
         return {
-            "tasks": serializer.dump(devices)
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "tasks": serializer.dump(tasks),
         }
     except Exception as e:
         print(e)
         return {
             "detail": str(e)
         }
+
 
 
 @router.patch('/{task_id}/status', status_code=status.HTTP_200_OK)
