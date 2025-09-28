@@ -3,7 +3,7 @@ from sqlalchemy import Column, Integer, String
 
 
 class Device(Base):
-    __tablename__ = 'devices'
+    __tablename__ = 'device_admin'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     device_code = Column(String, nullable=False, unique=True)

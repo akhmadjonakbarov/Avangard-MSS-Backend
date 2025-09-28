@@ -7,7 +7,7 @@ from .models import Device
 from .schemes import DeviceRequest
 
 router = APIRouter(
-    prefix='/devices',
+    prefix='/device_admin',
     tags=['Device Manager']
 )
 

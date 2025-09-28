@@ -55,7 +55,7 @@ class Detection(Base):
     category = Column(String)  # malicious, undetected, harmless, suspicious
     result = Column(String, nullable=True)  # e.g. Trojan.AndroidOS.SmsSpy.C!c
     file_hash = Column(String(64), nullable=True, index=True)  # SHA-256 hash of scanned file
-    malware_id = Column(Integer, ForeignKey("malwares.id"))
+    malware_id = Column(Integer, ForeignKey("malwares.id"), nullable=True)  # ✅ now optional
     malware = relationship("Malware", back_populates="detections")
 
 # In models.py - REPLACE the ScanStatus class with this:

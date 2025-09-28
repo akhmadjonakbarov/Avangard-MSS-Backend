@@ -33,7 +33,7 @@ async def get_devices(
         # calculate offset
         offset = (page - 1) * page_size
 
-        # fetch devices
+        # fetch device_admin
         result = await db.execute(
             select(Device).offset(offset).limit(page_size)
         )
