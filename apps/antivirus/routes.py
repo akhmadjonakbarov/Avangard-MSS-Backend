@@ -333,7 +333,6 @@ async def scan_worker():
                     select(App).where(App.application_id == task.application_id)
                 )
                 existed_app = result_one.scalar_one_or_none()
-                logger.info(f"Exist {task.application_id} was deleted")
                 if existed_app:
                     logger.info(f"Task {task.application_id} already exists in App → deleting ScanTask")
                     await db.delete(task)  # delete the ScanTask row
