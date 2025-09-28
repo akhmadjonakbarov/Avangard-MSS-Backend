@@ -3,6 +3,7 @@ from apps.user import routes as user_routes
 from apps.admin.routes import admin_route
 from apps.devices import routes as device_routes
 from apps.antivirus import routes as antivirus_routes
+from apps.avangard_app import routes as version_routes
 from core.settings import settings
 
 mobile_router = APIRouter(
@@ -10,6 +11,7 @@ mobile_router = APIRouter(
 )
 
 mobile_router.include_router(antivirus_routes.router, prefix='/antivirus', tags=["Mobile AntiVirus"])
+mobile_router.include_router(version_routes.router)
 
 main_router = APIRouter(
     prefix=settings.API_V1
