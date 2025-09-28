@@ -331,12 +331,13 @@ async def scan_worker():
             for task in tasks:
                 application_id = task.application_id
                 result_one = await db.execute(
-                    select(App).where(App.application_id == application_id)
+                    select(App).where(App.application_id == task.application_id)
                 )
                 existed_task = result_one.scalar_one_or_none()
+                logger.info(f"Exist {task.application_id} was deleted")
                 if existed_task:
                     logger.info(f"Exist {task.application_id} was deleted")
-                    await db.delete(existed_task)
+                    await db.delete(task.application_id)
                     await db.commit()
                     continue
 
