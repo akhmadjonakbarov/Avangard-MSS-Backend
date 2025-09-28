@@ -3,6 +3,7 @@ from sqlalchemy import select, desc
 from sqlalchemy.exc import SQLAlchemyError
 
 from di.db import db_dependency
+from di.user import admin_dependency
 from .models import Version
 from .schemes import VersionRequest, VersionResponse
 
@@ -15,6 +16,7 @@ router = APIRouter(
 @router.post("/add", status_code=status.HTTP_201_CREATED, response_model=VersionResponse)
 async def create_version(
         db: db_dependency,
+        admin:admin_dependency,
         version: VersionRequest,
 ):
     try:
@@ -32,7 +34,7 @@ async def create_version(
 
 
 @router.get("/", response_model=list[VersionResponse])
-async def get_versions(db: db_dependency):
+async def get_versions(db: db_dependency, admin:admin_dependency,):
     result = await db.execute(select(Version))
     versions = result.scalars().all()
     return versions
@@ -50,7 +52,7 @@ async def get_latest_version(db: db_dependency):
 
 
 @router.patch("/update/{version_id}", response_model=VersionResponse)
-async def update_version(version_id: int, updated: VersionRequest, db: db_dependency):
+async def update_version(version_id: int, updated: VersionRequest, db: db_dependency, admin:admin_dependency,):
     result = await db.execute(select(Version).where(Version.id == version_id))
     version = result.scalar_one_or_none()
     if not version:
@@ -69,7 +71,7 @@ async def update_version(version_id: int, updated: VersionRequest, db: db_depend
 
 
 @router.delete("/delete/{version_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_version(version_id: int, db: db_dependency):
+async def delete_version(version_id: int, db: db_dependency, admin:admin_dependency,):
     result = await db.execute(select(Version).where(Version.id == version_id))
     version = result.scalar_one_or_none()
     if not version:
