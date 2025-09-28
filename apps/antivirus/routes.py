@@ -329,15 +329,14 @@ async def scan_worker():
             tasks = result.scalars().all()
 
             for task in tasks:
-                application_id = task.application_id
                 result_one = await db.execute(
                     select(App).where(App.application_id == task.application_id)
                 )
-                existed_task = result_one.scalar_one_or_none()
+                existed_app = result_one.scalar_one_or_none()
                 logger.info(f"Exist {task.application_id} was deleted")
-                if existed_task:
-                    logger.info(f"Exist {task.application_id} was deleted")
-                    await db.delete(task.application_id)
+                if existed_app:
+                    logger.info(f"Task {task.application_id} already exists in App → deleting ScanTask")
+                    await db.delete(task)  # delete the ScanTask row
                     await db.commit()
                     continue
 
