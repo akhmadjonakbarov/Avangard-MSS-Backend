@@ -143,7 +143,10 @@ API_KEYS = [
     os.getenv("VT_API_KEY2"),
     os.getenv("VT_API_KEY3"),
     os.getenv("VT_API_KEY4"),
+    os.getenv("VT_API_KEY5"),
+    os.getenv("VT_API_KEY6"),
 ]
+
 
 class VirusTotalRepository:
     def __init__(self, session: Optional[aiohttp.ClientSession] = None, api_keys: Optional[List[str]] = None):
