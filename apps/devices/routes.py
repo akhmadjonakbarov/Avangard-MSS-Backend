@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 
 from core.security import create_access_token_for_device
 from di.db import db_dependency
@@ -7,13 +8,9 @@ from .models import Device
 from .schemes import DeviceRequest
 
 router = APIRouter(
-    prefix='/device_admin',
+    prefix='/devices',
     tags=['Device Manager']
 )
-
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
-from sqlalchemy.exc import SQLAlchemyError
 
 
 @router.post("/add", status_code=status.HTTP_201_CREATED)

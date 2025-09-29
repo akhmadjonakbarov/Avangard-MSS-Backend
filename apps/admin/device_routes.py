@@ -1,13 +1,9 @@
-from typing import List
-
 from fastapi import APIRouter, HTTPException
 from sqlalchemy import select
 from starlette import status
-from yaml import serialize
 
 from apps import Device
 from apps.admin.serializers.device_serializer import DeviceSerializer
-from apps.devices.schemes import DeviceResponse
 from di.db import db_dependency
 from di.user import admin_dependency
 

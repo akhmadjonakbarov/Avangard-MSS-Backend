@@ -3,7 +3,7 @@ from sqlalchemy import Column, Integer, String
 
 
 class Device(Base):
-    __tablename__ = 'device_admin'
+    __tablename__ = 'devices'  # 👈 changed from 'device_admin'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     device_code = Column(String, nullable=False, unique=True)
@@ -14,3 +14,4 @@ class Device(Base):
 
     def __repr__(self):
         return f"<Device(id={self.id}, device_code={self.device_code}, model={self.model})>"
+
