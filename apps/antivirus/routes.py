@@ -305,7 +305,7 @@ async def init(
         logger.info(f"/init returned {len(apps)} apps")
 
         return {
-            "count": apps.count(),
+            "count": len(apps),
             "apps": serializer.dump(apps, many=True)
         }
     except Exception as e:
