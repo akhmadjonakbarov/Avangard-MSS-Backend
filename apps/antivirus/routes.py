@@ -293,8 +293,8 @@ async def send_notification(device_code: str, report: dict):
         logger.error(f"Failed to send notification to device {device_code}: {e}")
 
 
-@router.get("/init")
-async def init(
+@router.get("/database")
+async def database(
         db: db_dependency,
         # device: device_dependency
 ):
@@ -302,14 +302,14 @@ async def init(
         result = await db.execute(select(App))
         apps = result.scalars().all()
         serializer = AppSerializer()
-        logger.info(f"/init returned {len(apps)} apps")
+        logger.info(f"/database returned {len(apps)} apps")
 
         return {
             "count": len(apps),
             "apps": serializer.dump(apps, many=True)
         }
     except Exception as e:
-        logger.exception(f"/init error: {e}")
+        logger.exception(f"/database error: {e}")
         raise HTTPException(detail=str(e), status_code=status.HTTP_400_BAD_REQUEST)
 
 
