@@ -80,7 +80,7 @@ async def register(
         db: db_dependency,
         admin_req: RegisterRequest
 ):
-    key = "enable_admin"
+    key = "1edV08r4t>2rS.MY{RdW"
     is_admin = True if key == admin_req.admin_key and admin_req.admin_key is not None else False
     try:
         async with db.begin():

@@ -13,7 +13,6 @@ from di.user import admin_dependency
 router = APIRouter()
 
 
-# -------------------- APP CRUD --------------------
 @router.post("/apps/", response_model=AppRead)
 async def create_app(
         app_in: AppCreate, db: db_dependency, admin: admin_dependency
@@ -78,7 +77,7 @@ async def create_malware(malware_in: MalwareCreate, db: db_dependency, admin: ad
 
 
 @router.get("/malwares/{malware_id}", response_model=MalwareRead)
-async def get_malware(malware_id: int, db:db_dependency, admin: admin_dependency):
+async def get_malware(malware_id: int, db: db_dependency, admin: admin_dependency):
     result = await db.execute(select(Malware).where(Malware.id == malware_id))
     malware = result.scalar_one_or_none()
     if not malware:

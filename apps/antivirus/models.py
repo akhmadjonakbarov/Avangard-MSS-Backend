@@ -1,9 +1,10 @@
 import enum
 import hashlib
-from apps.base.models import Base
-from sqlalchemy import Column, Integer, String, ForeignKey, Table, LargeBinary, Enum, DateTime
+
+from sqlalchemy import Column, Integer, String, ForeignKey, Table, LargeBinary, DateTime
 from sqlalchemy.orm import relationship
-from sqlalchemy.sql import func
+
+from apps.base.models import Base
 
 # Many-to-many: Apps <-> Malwares
 app_malware = Table(
