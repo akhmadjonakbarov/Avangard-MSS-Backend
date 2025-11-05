@@ -77,6 +77,7 @@ class ScanTask(Base):
     scanning_hash = Column(String(64), nullable=True, index=True)  # SHA-256 hash
     status = Column(String, nullable=False, default=ScanStatus.PENDING)
     device_code = Column(String, nullable=True)
+    attempt = Column(Integer, nullable=False, server_default="0")  # 👈 new field (safe for existing rows)
 
     def calculate_hash(self) -> str:
         """Calculate SHA-256 hash of file_bytes."""
