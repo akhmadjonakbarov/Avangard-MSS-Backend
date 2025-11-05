@@ -5,7 +5,7 @@ import hashlib
 import logging
 import time  # Add this import
 
-from sqlalchemy import delete
+from sqlalchemy import delete, update
 from datetime import datetime
 import aiohttp
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, status
@@ -450,10 +450,6 @@ async def database(
 #                     await asyncio.sleep(30)
 #
 #         await asyncio.sleep(30)
-
-
-
-
 
 
 # ✅ Helper: increment attempt count or delete task if >= 3
