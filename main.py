@@ -9,9 +9,14 @@ from fastapi.responses import RedirectResponse
 app = FastAPI(
     title=settings.APP_NAME,
 )
+# 👇 Add your dashboard origin here
+origins = [
+    "https://avangard-admin-019a39bb-ae8f-765a-9.vercel.app",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,  # exact origin of your dashboard
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
