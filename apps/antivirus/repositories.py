@@ -145,8 +145,7 @@ API_KEYS = [
     os.getenv("VT_API_KEY4"),
     os.getenv("VT_API_KEY5"),
     os.getenv("VT_API_KEY6"),
-    os.getenv("VT_API_KEY7"),
-    os.getenv("VT_API_KEY8")
+    os.getenv("VT_API_KEY7")
 ]
 
 
