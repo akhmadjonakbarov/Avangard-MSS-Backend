@@ -20,25 +20,28 @@ app.add_middleware(
 
 @app.middleware("http")
 async def redirect_browsers(request: Request, call_next):
-    """Temporarily redirect browser requests to https://cyber-bro.uz"""
     user_agent = request.headers.get("user-agent", "").lower()
+    origin = request.headers.get("origin", "")
 
-    # Common browser identifiers
+    # Allow requests coming from your Vercel admin dashboard
+    if origin == "https://avangard-admin-019a39bb-ae8f-765a-9.vercel.app":
+        return await call_next(request)
+
+    # Common browsers
     browser_signatures = [
-        "mozilla",  # includes Firefox, Chrome, Edge, Safari, etc.
+        "mozilla",
         "chrome",
         "safari",
-        "edg",  # Microsoft Edge
+        "edg",
         "opera",
         "brave",
     ]
 
-    # If the request comes from a browser, redirect it
     if any(sig in user_agent for sig in browser_signatures):
         return RedirectResponse(url="https://cyber-bro.uz")
 
-    # Otherwise, continue normally (mobile or other clients)
     return await call_next(request)
+
 
 
 @app.on_event("startup")
