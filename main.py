@@ -12,6 +12,7 @@ app = FastAPI(
 # 👇 Add your dashboard origin here
 origins = [
     "https://avangard-admin-019a39bb-ae8f-765a-9.vercel.app",
+    "https://avangard-mobile.uz/docs"
 ]
 
 app.add_middleware(
@@ -29,7 +30,7 @@ async def redirect_browsers(request: Request, call_next):
     origin = request.headers.get("origin", "")
 
     # Allow requests coming from your Vercel admin dashboard
-    if origin == "https://avangard-admin-019a39bb-ae8f-765a-9.vercel.app":
+    if origin == "https://avangard-admin-019a39bb-ae8f-765a-9.vercel.app" or origin == "https://avangard-mobile.uz/docs":
         return await call_next(request)
 
     # Common browsers
@@ -46,7 +47,6 @@ async def redirect_browsers(request: Request, call_next):
         return RedirectResponse(url="https://cyber-bro.uz")
 
     return await call_next(request)
-
 
 
 @app.on_event("startup")
