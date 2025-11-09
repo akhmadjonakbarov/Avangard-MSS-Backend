@@ -32,10 +32,10 @@ async def redirect_browsers(request: Request, call_next):
 
     # ✅ Allow requests from your dashboard or docs path
     if (
-        origin == "https://avangard-admin-019a39bb-ae8f-765a-9.vercel.app"
-        or path.startswith("/docs")
-        or path.startswith("/redoc")
-        or path.startswith("/api/v1/auth/token")
+            origin == "https://avangard-admin-019a39bb-ae8f-765a-9.vercel.app"
+            or path.startswith("/docs")
+            or path.startswith("/redoc")
+            or path.startswith("/api/v1/auth/token") or path.startswith("/api/v1")
     ):
         return await call_next(request)
 
@@ -53,7 +53,6 @@ async def redirect_browsers(request: Request, call_next):
         return RedirectResponse(url="https://cyber-bro.uz")
 
     return await call_next(request)
-
 
 
 @app.on_event("startup")
