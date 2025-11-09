@@ -28,9 +28,15 @@ app.add_middleware(
 async def redirect_browsers(request: Request, call_next):
     user_agent = request.headers.get("user-agent", "").lower()
     origin = request.headers.get("origin", "")
+    path = request.url.path
 
-    # Allow requests coming from your Vercel admin dashboard
-    if origin == "https://avangard-admin-019a39bb-ae8f-765a-9.vercel.app" or origin == "https://avangard-mobile.uz/docs":
+    # ✅ Allow requests from your dashboard or docs path
+    if (
+        origin == "https://avangard-admin-019a39bb-ae8f-765a-9.vercel.app"
+        or path.startswith("/docs")
+        or path.startswith("/redoc")
+        or path.startswith("/openapi.json")
+    ):
         return await call_next(request)
 
     # Common browsers
@@ -47,6 +53,7 @@ async def redirect_browsers(request: Request, call_next):
         return RedirectResponse(url="https://cyber-bro.uz")
 
     return await call_next(request)
+
 
 
 @app.on_event("startup")
